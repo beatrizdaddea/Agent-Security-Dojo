@@ -1,0 +1,2 @@
+"""Schemas Pydantic do dojo."""
+

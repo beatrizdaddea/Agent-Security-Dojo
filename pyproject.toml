@@ -1,0 +1,20 @@
+[project]
+name = "agent-security-dojo"
+version = "0.1.0"
+description = "MVP didatico para avaliar prompt injection indireta em agentes com ferramentas."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langgraph>=0.2.70",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.3",
+    "pytest>=8.3.4",
+    "rich>=13.9.4",
+    "tiktoken>=0.8.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+

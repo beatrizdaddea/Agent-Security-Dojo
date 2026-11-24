@@ -1,6 +1,8 @@
 from app.agent.graph import run_agent
 from app.environment.workspace import Workspace
+from app.llm.openrouter_client import OpenRouterClient
 from app.schemas.tasks import InjectionTask, UserTask
+from app.schemas.tool_calls import PlannerMode, SecurityMode
 
 
 class AgentExecutor:
@@ -8,9 +10,12 @@ class AgentExecutor:
         self,
         workspace: Workspace,
         task: UserTask,
-        mode: str,
+        mode: SecurityMode,
         injection: InjectionTask | None = None,
+        *,
+        planner_mode: PlannerMode = "mock",
+        client: OpenRouterClient | None = None,
     ) -> str:
-        result = run_agent(workspace, task, mode, injection)
-        return str(result.get("answer", ""))
-
+        return run_agent(
+            workspace, task, mode, injection, planner_mode=planner_mode, client=client
+        )["answer"]

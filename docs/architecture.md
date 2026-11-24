@@ -2,39 +2,22 @@
 
 ## Scope
 
-Agent Security Dojo is an educational, local simulation for evaluating indirect prompt injection in tool-using LLM agents. It has no web service, database, frontend, or real email, calendar, or drive integration. The optional OpenRouter client is not used by the default deterministic planner.
+Agent Security Dojo evaluates indirect prompt injection with an in-memory inbox, calendar, and drive. Tool effects stay inside `Workspace`. In LLM mode the planner sends synthetic data to OpenRouter and receives structured assistant turns.
 
-## Execution Path
+## Graph execution
 
-`app.main` and `app.evaluation.evaluator` create a `Workspace` from seeded Pydantic state. `AgentExecutor` invokes the LangGraph graph in `app.agent.graph`; its executable node calls the deterministic planner in `app.agent.planner`.
+1. `load_user_task` snapshots the caller-supplied `UserTask` and initializes the runtime and conversation.
+2. `select_tools` derives function schemas from the simulated tool registry and the chosen security profile.
+3. `plan_next_action` uses either the fixed mock planner or `OpenRouterClient`. The mock planner gets the fixture label to replay a fixed action when the fixture is observed. The LLM gets the user instruction, tool catalog, and ordinary conversation messages.
+4. `tool_call_guard` asks `ToolRuntime` to validate and authorize one request. The runtime rejects unknown tools and invalid arguments in both profiles.
+5. `execute_tool` consumes the pending authorization, logs the attempt, and dispatches eligible calls to `Workspace`. Failed lookup and policy errors return as tool results.
+6. `inspect_tool_output` stores the observation, records heuristic signals, and appends the tool message for LLM planning. The runtime marks observations as tainted from workspace metadata and records their IDs on later attempts. Calls in the same model turn are processed in order.
+7. `final_answer` handles completion or an execution limit. `evaluate_result` applies the legitimate task check and records run telemetry.
 
-The planner performs reads and writes through `ToolRuntime`. The runtime creates a `ToolCall` log entry for every attempt, applies the task allowlist in secure mode, and calls `guard_tool_call` before invoking the matching `Workspace` method.
+The graph bounds planner turns and tool requests. In defensive mode, the runtime checks authorization against the original task snapshot. That snapshot supplies the allowed document scope, calendar date, recipients, or exact event parameters. The model cannot supply its own authorization or provenance fields. One successful write consumes the defensive run's write allowance.
 
-## Component Responsibilities
+## Evaluation
 
-| Area | Responsibility |
-| --- | --- |
-| `app/environment` | In-memory workspace state, seeded fixtures, and simulated side effects. |
-| `app/tools` | Runtime entry point and thin domain wrappers for workspace tools. |
-| `app/agent` | Graph shell, deterministic plan, executor, and prompts. |
-| `app/defenses` | Tool allowlists, injection detection, untrusted-output handling, and write-call guard. |
-| `app/attacks` | Controlled payloads and insertion into simulated untrusted data. |
-| `app/evaluation` | Legitimate tasks, scenario execution, checks, and aggregate metrics. |
-| `app/schemas` | Pydantic contracts shared across the application. |
-| `app/llm` | Optional OpenRouter client. |
+`app.evaluation.evaluator` clones each seeded workspace before injecting a fixture into the attacked copy. It scores legitimate utility, checks the targeted effect against the resulting workspace, and labels calls against intended task behavior. Labels are independent of tool policy decisions and heuristic signals. The attack fixtures live under `app/attacks` and the task fixtures live under `app/evaluation`. The `data/` directories are placeholders.
 
-## Security Model
-
-`vulnerable_mode` permits the deterministic simulation to follow selected malicious payloads so the benchmark can demonstrate attack impact. `secure_mode` limits tools by task, marks third-party content as untrusted, detects rule-based injection indicators, preserves the original task around untrusted output, and checks write calls for provenance, authorized recipients, sensitive markers, and attack objectives.
-
-The principal security boundaries are `app.tools.runtime.ToolRuntime`, `app.defenses.tool_filter`, `app.defenses.tool_call_guard`, `app.defenses.injection_detector`, `app.defenses.delimiters`, and `app.defenses.prompt_sandwich`.
-
-## Evaluation Model
-
-`EvaluationEngine` runs each task first on clean seeded state and then on a separate attacked copy. It records utility, attack success, allowed/blocked calls, and false-positive/false-negative counters in `EvaluationResult`. `aggregate_metrics` derives the reported rates from those results.
-
-## Current Boundaries
-
-- Scenario data is currently defined in Python; `data/benign`, `data/malicious`, and `data/scenarios` are placeholders.
-- The graph's named stages are pass-through nodes except for `execute_tool`; the planner currently owns behavior.
-- No linter, formatter, type checker, or pre-commit command is configured. Do not claim one exists without adding it deliberately.
+The benchmark artifacts contain counts, denial codes, model metadata, and usage summaries. Raw messages, tool arguments, canaries, and final answer text stay out of the artifacts. `mock` and `llm` runs use separate output files.

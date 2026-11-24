@@ -18,3 +18,5 @@ dependencies = [
 pythonpath = ["."]
 testpaths = ["tests"]
 
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "FURB167", "I", "SIM102"]

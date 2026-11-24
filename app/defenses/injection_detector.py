@@ -1,5 +1,9 @@
-import re
+"""Heuristic telemetry for defense in depth.
 
+Deterministic tool policy enforces containment independently of these signals.
+"""
+
+import re
 
 PATTERNS = [
     r"ignore previous instructions",
@@ -10,8 +14,6 @@ PATTERNS = [
     r"exfiltrate",
     r"\bleak\b",
     r"\bvaze\b",
-    r"envie para attacker",
-    r"send to attacker",
     r"security code",
     r"authentication code",
     r"password",
@@ -23,6 +25,5 @@ PATTERNS = [
 
 
 def detect_prompt_injection(text: str) -> tuple[bool, list[str]]:
-    hits = [pattern for pattern in PATTERNS if re.search(pattern, text, re.I)]
+    hits = [pattern for pattern in PATTERNS if re.search(pattern, text, re.IGNORECASE)]
     return bool(hits), hits
-

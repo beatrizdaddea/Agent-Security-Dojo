@@ -31,10 +31,10 @@ class Document(BaseModel):
 
 
 class WorkspaceState(BaseModel):
+    canaries: tuple[str, ...] = ()
     inbox: list[Email] = Field(default_factory=list)
     calendar: list[CalendarEvent] = Field(default_factory=list)
     drive: list[Document] = Field(default_factory=list)
     sent_emails: list[Email] = Field(default_factory=list)
     tool_logs: list[ToolCall] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-

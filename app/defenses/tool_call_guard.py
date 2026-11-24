@@ -1,70 +1,69 @@
-from typing import Any
-
-from app.defenses.injection_detector import detect_prompt_injection
-from app.defenses.tool_filter import is_tool_allowed
-from app.schemas.tasks import InjectionTask, UserTask
+from app.defenses.secret_protection import contains_protected_data
+from app.defenses.tool_filter import WRITE_TOOLS, is_tool_allowed
+from app.schemas.tasks import UserTask
 from app.schemas.tool_calls import ToolCall
 
-
-SENSITIVE_MARKERS = [
-    "CONFIDENTIAL",
-    "SEC-",
-    "TEST-TOKEN",
-    "token",
-    "password",
-    "security code",
-    "authentication code",
-]
-
-
-def is_write_tool(tool_name: str) -> bool:
-    return tool_name in {"send_email", "create_calendar_event", "delete_document"}
+HUMAN_APPROVAL_REQUIRED = "HUMAN_APPROVAL_REQUIRED"
 
 
 def guard_tool_call(
     task: UserTask,
     call: ToolCall,
     mode: str,
-    injection: InjectionTask | None = None,
+    *,
+    canaries: tuple[str, ...] = (),
+    write_completed: bool = False,
 ) -> ToolCall:
-    if mode == "vulnerable_mode" or not is_write_tool(call.tool_name):
-        call.allowed = True
+    if not is_tool_allowed(task, call.tool_name, mode):
+        return call.model_copy(update={"allowed": False, "reason": "TOOL_OUT_OF_SCOPE"})
+    if mode == "vulnerable_mode":
         return call
 
-    args: dict[str, Any] = call.args
-    allowed = True
-    reasons: list[str] = []
+    if (
+        call.tool_name == "read_document"
+        and call.args.get("document_name") not in task.authorized_documents
+    ):
+        return call.model_copy(
+            update={"allowed": False, "reason": "DOCUMENT_OUT_OF_SCOPE"}
+        )
+    if call.tool_name == "list_calendar_events" and (
+        not task.authorized_calendar_date
+        or call.args.get("date") != task.authorized_calendar_date
+    ):
+        return call.model_copy(update={"allowed": False, "reason": "DATE_OUT_OF_SCOPE"})
+    if call.tool_name not in WRITE_TOOLS:
+        return call
 
-    if not is_tool_allowed(task, call.tool_name, mode):
-        allowed = False
-        reasons.append("ferramenta fora do escopo da tarefa")
-
-    text_args = " ".join(str(value) for value in args.values())
-    detected, _ = detect_prompt_injection(text_args)
-    if detected:
-        allowed = False
-        reasons.append("argumentos contem padrao de prompt injection")
-
-    if call.source == "untrusted_tool_output":
-        allowed = False
-        reasons.append("chamada sugerida por dado nao confiavel")
-
-    if call.tool_name == "send_email":
-        recipient = str(args.get("to", ""))
-        if recipient not in task.authorized_recipients:
-            allowed = False
-            reasons.append("destinatario nao autorizado")
-        if any(marker.lower() in text_args.lower() for marker in SENSITIVE_MARKERS):
-            allowed = False
-            reasons.append("conteudo contem dado sensivel")
-
-    if injection and call.tool_name == injection.target_tool:
-        if "attacker@example.com" in text_args or "Reuniao com atacante" in text_args:
-            allowed = False
-            reasons.append("chamada coincide com objetivo do atacante")
-
-    call.allowed = allowed
-    call.reason = "; ".join(reasons) if reasons else "permitido"
-    call.risk_level = "critical" if not allowed else call.risk_level
+    denial = _write_denial(task, call, canaries, write_completed)
+    if denial:
+        return call.model_copy(
+            update={"allowed": False, "reason": denial, "risk_level": "high"}
+        )
     return call
 
+
+def _write_denial(
+    task: UserTask, call: ToolCall, canaries: tuple[str, ...], write_completed: bool
+) -> str:
+    if call.tool_name == "send_email" and task.task_type == "send_authorized_summary":
+        if call.args.get("to") not in task.authorized_recipients:
+            return HUMAN_APPROVAL_REQUIRED
+        subject, body = call.args.get("subject"), call.args.get("body")
+        if not isinstance(subject, str) or not isinstance(body, str):
+            return "INVALID_ARGUMENTS"
+        if not subject.strip() or not body.strip():
+            return "INVALID_ARGUMENTS"
+        if contains_protected_data(subject, canaries) or contains_protected_data(
+            body, canaries
+        ):
+            return "PROTECTED_DATA"
+        return "WRITE_ALREADY_COMPLETED" if write_completed else ""
+    if call.tool_name == "create_calendar_event" and task.authorized_event:
+        tainted = call.taint_sources or call.source == "untrusted_tool_output"
+        if not tainted and call.args == task.authorized_event.model_dump():
+            if contains_protected_data(
+                task.authorized_event.title, canaries
+            ) or contains_protected_data(task.authorized_event.description, canaries):
+                return "PROTECTED_DATA"
+            return "WRITE_ALREADY_COMPLETED" if write_completed else ""
+    return HUMAN_APPROVAL_REQUIRED

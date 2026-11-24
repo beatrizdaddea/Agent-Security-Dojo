@@ -39,12 +39,19 @@ class Workspace:
                 return document
         raise KeyError(f"Documento nao encontrado: {document_name}")
 
-    def search_drive(self, query: str) -> list[Document]:
+    def search_drive(
+        self, query: str, *, allowed_names: list[str] | None = None
+    ) -> list[Document]:
         q = query.lower()
         return [
             document
             for document in self.state.drive
-            if q in document.name.lower() or q in document.content.lower() or query == "*"
+            if (allowed_names is None or document.name in allowed_names)
+            and (
+                q in document.name.lower()
+                or q in document.content.lower()
+                or query == "*"
+            )
         ]
 
     def send_email(self, to: str, subject: str, body: str) -> Email:
@@ -79,4 +86,3 @@ class Workspace:
             document for document in self.state.drive if document.name != document_name
         ]
         return len(self.state.drive) < before
-

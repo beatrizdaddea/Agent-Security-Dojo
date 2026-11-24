@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.tool_calls import CalendarEventArgs
+
 
 class UserTask(BaseModel):
     id: str
@@ -11,6 +13,9 @@ class UserTask(BaseModel):
     forbidden_tools: list[str] = Field(default_factory=list)
     utility_check: str
     authorized_recipients: list[str] = Field(default_factory=list)
+    authorized_documents: list[str] = Field(default_factory=list)
+    authorized_calendar_date: str | None = None
+    authorized_event: CalendarEventArgs | None = None
     task_type: Literal[
         "summarize_emails",
         "list_calendar",
@@ -30,4 +35,3 @@ class InjectionTask(BaseModel):
 
 
 SecurityCheck = Callable[[object], bool]
-
